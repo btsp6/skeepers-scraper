@@ -2,12 +2,13 @@ import functools
 import json
 import re
 import time
-from typing import Any, List, Set
+from typing import List, Set
 
 from munch import Munch
 import requests
 
 from emailer import send_email
+from logger import Logger
 
 CSRF_PATTERN = re.compile(r'<meta name="csrf-token" content="(.*?)" />')
 ACCESS_TOKEN_PATTERN = re.compile(r"<meta content='(.*?)' name='[0-9a-z]{32}'>")
@@ -16,8 +17,8 @@ SCRAPE_FREQUENCY_S = 30
 MAX_PATTERN_ERRORS = 10
 MAX_LOGIN_ERRORS = 10
 
-ID_PATH = "ids.json"
-CREDENTIALS_PATH = "credentials.json"
+ID_PATH = "data/ids.json"
+CREDENTIALS_PATH = "credentials/credentials.json"
 LOGIN_URL = "https://app.im.skeepers.io/login"
 SEARCH_URL = "https://app.im.skeepers.io/creators/campaigns/search"
 GIFTED_PAYLOAD = (
@@ -26,7 +27,6 @@ GIFTED_PAYLOAD = (
     "&filter%5Bplatform_entity_id%5D=Consumer%3A%3AUser-324408"
 )
 # GIFTED_PAYLOAD = "https://app.im.skeepers.io/api/v3/campaigns?format=attributes&include=store&page%5Bsize%5D=81&page%5Bnumber%5D=1"
-
 
 
 class PatternNotFoundError(Exception):
@@ -77,7 +77,7 @@ def login(s: requests.Session, username: str, password: str) -> None:
     )
 
 def scrape() -> None:
-    with open("credentials.json", "r") as f:
+    with open(CREDENTIALS_PATH, "r") as f:
         credentials = json.load(f)
 
     pattern_error_count = 0
@@ -93,16 +93,16 @@ def scrape() -> None:
         while True:
             try:
                 if needs_login:
-                    print("Logging in...")
+                    Logger.log("Logging in...")
                     login(s, *credentials["skeepers"].values())
                     needs_login = False
 
-                print("Getting products...")
                 search_page = s.get(SEARCH_URL)
                 if search_page.status_code != 200:
                     needs_login = True
                     raise LoginFailed()
                 
+                Logger.log("Scraping...")
                 login_error_count = 0
                 gifted_content: requests.Response = s.get(
                     GIFTED_PAYLOAD,
@@ -118,25 +118,23 @@ def scrape() -> None:
             except PatternNotFoundError as e:
                 pattern_error_count += 1
                 if pattern_error_count >= MAX_PATTERN_ERRORS:
-                    print(f"Max pattern errors reached: {e}")
+                    Logger.log(f"Max pattern errors reached: {e}")
                     break
             except LoginFailed:
                 login_error_count += 1
                 if login_error_count >= MAX_LOGIN_ERRORS:
-                    print(f"Max login errors reached, exiting.")
+                    Logger.log(f"Max login errors reached, exiting.")
                     break
 
             pattern_error_count = 0
             gifted_products = [Munch.fromDict(product) for product in json.loads(gifted_content.text)]
             new_products = process_new_products( gifted_products)
-            if not new_products:
-                continue
-
-            # New products are up, send the email!
-            print("New products found! Preparing email...")
-            send_email(new_products, credentials["gmail"]["username"])
-            print("Email sent!")
-
+            if new_products:
+                # New products are up, send the email!
+                Logger.log("New products found! Preparing email...")
+                send_email(new_products, credentials["gmail"]["username"])
+                Logger.log("Email sent!")
+            
             time.sleep(SCRAPE_FREQUENCY_S)
                 
 
@@ -144,4 +142,4 @@ if __name__ == "__main__":
     try:
         scrape()
     except KeyboardInterrupt:
-        print("Shutting down.")
+        Logger.log("Shutting down.")

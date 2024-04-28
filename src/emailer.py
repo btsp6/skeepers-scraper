@@ -1,7 +1,10 @@
-from typing import Any, List
+from typing import List
 
 import yagmail
 from munch import Munch
+
+OAUTH_PATH = "credentials/oauth2_creds.json"
+
 
 def send_email(products: List[Munch], username: str) -> None:
     product_htmls = []
@@ -17,7 +20,7 @@ def send_email(products: List[Munch], username: str) -> None:
         f"{''.join(product_htmls)}"
         "<p>Happy shopping!</p>"
     )
-    with yagmail.SMTP(username, oauth2_file="oauth2_creds.json") as yag:
+    with yagmail.SMTP(username, oauth2_file=OAUTH_PATH) as yag:
         yag.send(
             to=username,
             subject="New Gifted Reviews Are Available!",
