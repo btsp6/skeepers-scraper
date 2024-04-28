@@ -1,75 +1,147 @@
+import functools
 import json
 import re
+import time
+from typing import Any, List, Set
+
+from munch import Munch
 import requests
-import sys
+
+from emailer import send_email
 
 CSRF_PATTERN = re.compile(r'<meta name="csrf-token" content="(.*?)" />')
 ACCESS_TOKEN_PATTERN = re.compile(r"<meta content='(.*?)' name='[0-9a-z]{32}'>")
 
+SCRAPE_FREQUENCY_S = 30
+MAX_PATTERN_ERRORS = 10
+MAX_LOGIN_ERRORS = 10
 
-with open("credentials.json", "r") as f:
-    credentials = json.load(f)
-
-username = credentials["username"]
-password = credentials["password"]
-
-login_url = "https://app.im.skeepers.io/login"
-search_url = "https://app.im.skeepers.io/creators/campaigns/search"
-gifted_payload = (
+ID_PATH = "ids.json"
+CREDENTIALS_PATH = "credentials.json"
+LOGIN_URL = "https://app.im.skeepers.io/login"
+SEARCH_URL = "https://app.im.skeepers.io/creators/campaigns/search"
+GIFTED_PAYLOAD = (
     "https://app.im.skeepers.io/api/v3/campaigns?format=attributes&include=store"
-    "&page%5Bsize%5D=9&page%5Bnumber%5D=1"
+    "&page%5Bsize%5D=81&page%5Bnumber%5D=1"
     "&filter%5Bplatform_entity_id%5D=Consumer%3A%3AUser-324408"
 )
-# gifted_payload = "https://app.im.skeepers.io/api/v3/campaigns?format=attributes&include=store&page%5Bsize%5D=81&page%5Bnumber%5D=1"
+# GIFTED_PAYLOAD = "https://app.im.skeepers.io/api/v3/campaigns?format=attributes&include=store&page%5Bsize%5D=81&page%5Bnumber%5D=1"
 
-with requests.Session() as s:
-    s.headers.update(
-        {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/123.0.0.0 Safari/537.36"
-            ),
-        }
-    )
 
-    print("Logging in...")
-    login_page = s.get(login_url)
+
+class PatternNotFoundError(Exception):
+    pass
+
+class LoginFailed(Exception):
+    pass
+
+def get_html_pattern(pattern: re.Pattern[str], html: requests.Response, error_msg: str = None) -> str:
     try:
-        csrf_token = re.findall(CSRF_PATTERN, login_page.text)[0]
+        return re.findall(pattern, html.text)[0]
     except IndexError:
-        print("No CSRF token found; exiting!")
-        sys.exit(1)
+        raise PatternNotFoundError(f"{error_msg}")
+
+@functools.cache
+def get_previous_ids() -> Set[str]:
+    with open(ID_PATH, "r") as f:
+        return set(json.load(f))
+
+def process_new_products(products: List[Munch]) -> List[Munch]:
+    product_by_id = {product.id: product for product in products}
+    current_ids = set(product_by_id)
+    previous_ids = get_previous_ids()
+    if previous_ids == current_ids:
+        return []
     
-    login_request = s.post(
-        login_url,
+    get_previous_ids.cache_clear()
+    with open(ID_PATH, "w") as f:
+        json.dump(list(current_ids), f)
+    
+    new_ids = current_ids - previous_ids
+    return [product_by_id[new_id] for new_id in new_ids]
+
+def login(s: requests.Session, username: str, password: str) -> None:
+    login_page = s.get(LOGIN_URL)
+    s.post(
+        LOGIN_URL,
         data={
-            "authenticity_token": csrf_token,
+            "authenticity_token": get_html_pattern(
+                CSRF_PATTERN,
+                login_page,
+                error_msg="No CSRF token found",
+            ),
             "sign_in[email]": username,
             "sign_in[password]": password,
         },
         allow_redirects=False,
     )
 
-    print("Getting products...")
-    search_page = s.get(search_url)
+def scrape() -> None:
+    with open("credentials.json", "r") as f:
+        credentials = json.load(f)
+
+    pattern_error_count = 0
+    login_error_count = 0
+    needs_login = True
+    with requests.Session() as s:
+        s.headers["User-Agent"] = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/123.0.0.0 Safari/537.36"
+        )
+
+        while True:
+            try:
+                if needs_login:
+                    print("Logging in...")
+                    login(s, *credentials["skeepers"].values())
+                    needs_login = False
+
+                print("Getting products...")
+                search_page = s.get(SEARCH_URL)
+                if search_page.status_code != 200:
+                    needs_login = True
+                    raise LoginFailed()
+                
+                login_error_count = 0
+                gifted_content: requests.Response = s.get(
+                    GIFTED_PAYLOAD,
+                    headers={
+                        "Access-Token": get_html_pattern(
+                            ACCESS_TOKEN_PATTERN,
+                            search_page,
+                            error_msg="Missing access token",
+                        )
+                    },
+                )
+
+            except PatternNotFoundError as e:
+                pattern_error_count += 1
+                if pattern_error_count >= MAX_PATTERN_ERRORS:
+                    print(f"Max pattern errors reached: {e}")
+                    break
+            except LoginFailed:
+                login_error_count += 1
+                if login_error_count >= MAX_LOGIN_ERRORS:
+                    print(f"Max login errors reached, exiting.")
+                    break
+
+            pattern_error_count = 0
+            gifted_products = [Munch.fromDict(product) for product in json.loads(gifted_content.text)]
+            new_products = process_new_products( gifted_products)
+            if not new_products:
+                continue
+
+            # New products are up, send the email!
+            print("New products found! Preparing email...")
+            send_email(new_products, credentials["gmail"]["username"])
+            print("Email sent!")
+
+            time.sleep(SCRAPE_FREQUENCY_S)
+                
+
+if __name__ == "__main__":
     try:
-        access_token = re.findall(ACCESS_TOKEN_PATTERN, search_page.text)[0]
-    except IndexError:
-        print("Couldn't find access token; exiting!")
-        sys.exit(1)
-    
-    gifted_content = s.get(gifted_payload, headers={"Access-Token": access_token})
-    gifted_products = json.loads(gifted_content.text)
-    product_title_by_id = {product["id"]: product["title"] for product in gifted_products}
-
-    with open("ids.json", "r+") as f:
-        ids = product_title_by_id.keys()
-        previous_ids = set(json.load(f))
-        f.seek(0)
-        json.dump(list(ids), f)
-        f.truncate()
-
-    if new_ids := ids - previous_ids:
-        print("Got new products!")
-        new_titles = [product_title_by_id[new_id] for new_id in new_ids]
+        scrape()
+    except KeyboardInterrupt:
+        print("Shutting down.")
