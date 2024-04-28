@@ -114,7 +114,6 @@ def scrape() -> None:
                         )
                     },
                 )
-
             except PatternNotFoundError as e:
                 pattern_error_count += 1
                 if pattern_error_count >= MAX_PATTERN_ERRORS:
@@ -128,7 +127,7 @@ def scrape() -> None:
 
             pattern_error_count = 0
             gifted_products = [Munch.fromDict(product) for product in json.loads(gifted_content.text)]
-            new_products = process_new_products( gifted_products)
+            new_products = process_new_products(gifted_products)
             if new_products:
                 # New products are up, send the email!
                 Logger.log("New products found! Preparing email...")
