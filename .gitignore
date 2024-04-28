@@ -3,8 +3,10 @@
 
 # But not these files...
 !.gitignore
-!*.py
 !Dockerfile
+!README.md
+!*.py
+!*.example
 
 # ...even if they are in subdirectories
 !*/
