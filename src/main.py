@@ -110,8 +110,10 @@ def scrape(credentials: Munch) -> None:
                         )
                     },
                 )
-                if not gifted_content.text:
-                    Logger.log("Failed to get any gifted content!")
+                try:
+                    gifted_json = gifted_content.json()
+                except json.decoder.JSONDecodeError:
+                    Logger.log(f"Failed to get any gifted content!\nHTTP response:\n{gifted_content.text}")
                     needs_login = True
                     raise LoginFailed()
 
@@ -128,7 +130,7 @@ def scrape(credentials: Munch) -> None:
             else:
                 login_error_count = 0
                 pattern_error_count = 0
-                gifted_products = [Munch.fromDict(product) for product in json.loads(gifted_content.text)]
+                gifted_products = [Munch.fromDict(product) for product in gifted_json]
                 new_products = process_new_products(gifted_products)
                 if new_products:
                     # New products are up, send the email!
