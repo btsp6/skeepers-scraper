@@ -110,7 +110,7 @@ def scrape(credentials: Munch) -> None:
                         )
                     },
                 )
-                if gifted_content.text == "":
+                if not gifted_content.text:
                     Logger.log("Failed to get any gifted content!")
                     needs_login = True
                     raise LoginFailed()
@@ -148,3 +148,4 @@ if __name__ == "__main__":
         Logger.log("Shutting down.")
     except Exception as e:
         send_error_report(credentials.gmail.username, e)
+        raise
