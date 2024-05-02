@@ -6,6 +6,7 @@
 !Dockerfile
 !README.md
 !*.py
+!*.sh
 !*.example
 
 # ...even if they are in subdirectories
