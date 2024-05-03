@@ -4,8 +4,9 @@ import re
 import time
 from typing import List, Set
 
-from munch import Munch
 import requests
+from munch import Munch
+from requests import HTTPError
 
 from emailer import send_email, send_error_report
 from logger import Logger
@@ -93,13 +94,8 @@ def scrape(credentials: Munch) -> None:
                     login(s, *credentials.skeepers.values())
                     needs_login = False
 
-                search_page = s.get(SEARCH_URL)
-                if search_page.url == LOGIN_URL:  # redirects to login page if login expires
-                    Logger.log("Failed to get search page!")
-                    needs_login = True
-                    raise LoginFailed()
-                
                 Logger.log("Scraping...")
+                search_page = s.get(SEARCH_URL)
                 gifted_content = s.get(
                     GIFTED_PAYLOAD,
                     headers={
@@ -111,9 +107,9 @@ def scrape(credentials: Munch) -> None:
                     },
                 )
                 try:
-                    gifted_json = gifted_content.json()
-                except json.decoder.JSONDecodeError:
-                    Logger.log(f"Failed to get any gifted content!\nHTTP response:\n{gifted_content.text}")
+                    gifted_content.raise_for_status()
+                except HTTPError as e:
+                    Logger.log(f"Failed to get gifted content: {e}")
                     needs_login = True
                     raise LoginFailed()
 
@@ -130,7 +126,7 @@ def scrape(credentials: Munch) -> None:
             else:
                 login_error_count = 0
                 pattern_error_count = 0
-                gifted_products = [Munch.fromDict(product) for product in gifted_json]
+                gifted_products = [Munch.fromDict(product) for product in gifted_content.json()]
                 new_products = process_new_products(gifted_products)
                 if new_products:
                     # New products are up, send the email!
