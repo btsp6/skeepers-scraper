@@ -1,5 +1,6 @@
 import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 LOG_FORMAT = "[{now}] {message}"
 
@@ -10,7 +11,7 @@ class Logger:
 
     @staticmethod
     def log(message: str) -> None:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(tz=ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
         if message != Logger.curr_message:
             Logger.curr_message = message
             Logger.message_count = 1
