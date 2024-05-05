@@ -6,7 +6,7 @@ from typing import List, Set
 
 import requests
 from munch import Munch
-from requests import HTTPError
+from requests import ConnectionError, HTTPError
 
 from emailer import send_email, send_error_report
 from logger import Logger
@@ -16,7 +16,7 @@ ACCESS_TOKEN_PATTERN = re.compile(r"<meta content='(.*?)' name='[0-9a-z]{32}'>")
 
 SCRAPE_FREQUENCY_S = 15
 MAX_PATTERN_ERRORS = 10
-MAX_LOGIN_ERRORS = 10
+MAX_CONNECTION_ERRORS = 10
 
 ID_PATH = "data/ids.json"
 CREDENTIALS_PATH = "credentials/credentials.json"
@@ -30,9 +30,6 @@ GIFTED_PAYLOAD = (
 
 
 class PatternNotFoundError(Exception):
-    pass
-
-class LoginFailed(Exception):
     pass
 
 def get_html_pattern(pattern: re.Pattern[str], html: requests.Response, error_msg: str = None) -> str:
@@ -106,22 +103,20 @@ def scrape(credentials: Munch) -> None:
                         )
                     },
                 )
-                try:
-                    gifted_content.raise_for_status()
-                except HTTPError as e:
-                    Logger.log(f"Failed to get gifted content: {e}")
-                    needs_login = True
-                    raise LoginFailed()
+                gifted_content.raise_for_status()
 
             except PatternNotFoundError as e:
                 pattern_error_count += 1
+                Logger.log(f"Rgex pattern failed to match: {e}")
                 if pattern_error_count >= MAX_PATTERN_ERRORS:
-                    Logger.log(f"Max pattern errors reached: {e}")
+                    Logger.log(f"Max pattern errors reached, exiting.")
                     break
-            except LoginFailed:
+            except (ConnectionError, HTTPError) as e:
                 login_error_count += 1
-                if login_error_count >= MAX_LOGIN_ERRORS:
-                    Logger.log(f"Max login errors reached, exiting.")
+                needs_login = True
+                Logger.log(f"Failed to reach website: {e}")
+                if login_error_count >= MAX_CONNECTION_ERRORS:
+                    Logger.log(f"Max connection errors reached, exiting.")
                     break
             else:
                 login_error_count = 0
