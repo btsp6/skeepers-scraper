@@ -43,6 +43,11 @@ def get_previous_ids() -> Set[str]:
     with open(ID_PATH, "r") as f:
         return set(json.load(f))
 
+def set_previous_ids(ids: Set[str]) -> None:
+    with open(ID_PATH, "w") as f:
+        json.dump(list(ids), f)
+    get_previous_ids.cache_clear()
+
 def process_new_products(products: List[Munch]) -> List[Munch]:
     product_by_id = {product.id: product for product in products}
     current_ids = set(product_by_id)
@@ -50,10 +55,7 @@ def process_new_products(products: List[Munch]) -> List[Munch]:
     if previous_ids == current_ids:
         return []
     
-    get_previous_ids.cache_clear()
-    with open(ID_PATH, "w") as f:
-        json.dump(list(current_ids), f)
-    
+    set_previous_ids(current_ids)
     new_ids = current_ids - previous_ids
     return [product_by_id[new_id] for new_id in new_ids]
 
