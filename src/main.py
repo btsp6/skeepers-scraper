@@ -15,8 +15,8 @@ CSRF_PATTERN = re.compile(r'<meta name="csrf-token" content="(.*?)" />')
 ACCESS_TOKEN_PATTERN = re.compile(r"<meta content='(.*?)' name='[0-9a-z]{32}'>")
 
 SCRAPE_FREQUENCY_S = 15
-MAX_PATTERN_ERRORS = 10
-MAX_CONNECTION_ERRORS = 10
+MAX_PATTERN_ERRORS = 100
+MAX_CONNECTION_ERRORS = 100
 
 ID_PATH = "data/ids.json"
 CREDENTIALS_PATH = "credentials/credentials.json"
@@ -109,7 +109,7 @@ def scrape(credentials: Munch) -> None:
 
             except PatternNotFoundError as e:
                 pattern_error_count += 1
-                Logger.log(f"Rgex pattern failed to match: {e}")
+                Logger.log(f"Regex pattern failed to match: {e}")
                 if pattern_error_count >= MAX_PATTERN_ERRORS:
                     Logger.log(f"Max pattern errors reached, exiting.")
                     break
