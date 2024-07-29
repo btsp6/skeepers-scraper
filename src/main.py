@@ -17,6 +17,7 @@ ACCESS_TOKEN_PATTERN = re.compile(r"<meta content='(.*?)' name='[0-9a-z]{32}'>")
 SCRAPE_FREQUENCY_S = 15
 MAX_PATTERN_ERRORS = 100
 MAX_CONNECTION_ERRORS = 100
+PAUSE_S = 300
 
 ID_PATH = "data/ids.json"
 CREDENTIALS_PATH = "credentials/credentials.json"
@@ -111,15 +112,19 @@ def scrape(credentials: Munch) -> None:
                 pattern_error_count += 1
                 Logger.log(f"Regex pattern failed to match: {e}")
                 if pattern_error_count >= MAX_PATTERN_ERRORS:
-                    Logger.log(f"Max pattern errors reached, exiting.")
-                    break
+                    Logger.log(f"Max pattern errors reached, retrying in {PAUSE_S} seconds.")
+                    send_error_report(credentials.gmail.username, e)
+                    time.sleep(PAUSE_S)
+                    continue
             except (ConnectionError, HTTPError) as e:
                 login_error_count += 1
                 needs_login = True
                 Logger.log(f"Failed to reach website: {e}")
                 if login_error_count >= MAX_CONNECTION_ERRORS:
-                    Logger.log(f"Max connection errors reached, exiting.")
-                    break
+                    Logger.log(f"Max connection errors reached, retrying in {PAUSE_S} seconds.")
+                    send_error_report(credentials.gmail.username, e)
+                    time.sleep(PAUSE_S)
+                    continue
             else:
                 login_error_count = 0
                 pattern_error_count = 0
