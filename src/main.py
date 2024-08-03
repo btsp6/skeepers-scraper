@@ -2,7 +2,7 @@ import functools
 import json
 import re
 import time
-from typing import List, Set
+from typing import Dict, List, Set
 
 import requests
 from munch import Munch
@@ -21,8 +21,7 @@ PAUSE_S = 300
 
 ID_PATH = "data/ids.json"
 CREDENTIALS_PATH = "credentials/credentials.json"
-LOGIN_URL = "https://app.im.skeepers.io/login"
-SEARCH_URL = "https://app.im.skeepers.io/creators/campaigns/search"
+LOGIN_URL = "https://app.im.skeepers.io/api/v2/session"
 GIFTED_PAYLOAD = (
     "https://app.im.skeepers.io/api/v3/campaigns?format=attributes&include=store"
     "&page%5Bsize%5D=81&page%5Bnumber%5D=1"
@@ -61,20 +60,17 @@ def process_new_products(products: List[Munch]) -> List[Munch]:
     return [product_by_id[new_id] for new_id in new_ids]
 
 def login(s: requests.Session, username: str, password: str) -> None:
-    login_page = s.get(LOGIN_URL)
-    s.post(
+    response: Dict[str, str] = s.post(
         LOGIN_URL,
         data={
-            "authenticity_token": get_html_pattern(
-                CSRF_PATTERN,
-                login_page,
-                error_msg="No CSRF token found",
-            ),
-            "sign_in[email]": username,
-            "sign_in[password]": password,
+            "creator[email]": username,
+            "creator[password]": password,
         },
-        allow_redirects=False,
-    )
+    ).json()
+    access_token = response.get("access_token")
+    if access_token is None:
+        raise ConnectionError("Access token not found")
+    s.headers["Access-Token"] = access_token
 
 def scrape(credentials: Munch) -> None:
     pattern_error_count = 0
@@ -95,17 +91,7 @@ def scrape(credentials: Munch) -> None:
                     needs_login = False
 
                 Logger.log("Scraping...")
-                search_page = s.get(SEARCH_URL)
-                gifted_content = s.get(
-                    GIFTED_PAYLOAD,
-                    headers={
-                        "Access-Token": get_html_pattern(
-                            ACCESS_TOKEN_PATTERN,
-                            search_page,
-                            error_msg="Missing access token",
-                        )
-                    },
-                )
+                gifted_content = s.get(GIFTED_PAYLOAD)
                 gifted_content.raise_for_status()
 
             except PatternNotFoundError as e:
