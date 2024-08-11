@@ -6,7 +6,7 @@ from typing import Dict, List, Set
 
 import requests
 from munch import Munch
-from requests import ConnectionError, HTTPError
+from requests import ConnectionError, HTTPError, JSONDecodeError
 
 from emailer import send_email, send_error_report
 from logger import Logger
@@ -60,14 +60,18 @@ def process_new_products(products: List[Munch]) -> List[Munch]:
     return [product_by_id[new_id] for new_id in new_ids]
 
 def login(s: requests.Session, username: str, password: str) -> None:
-    response: Dict[str, str] = s.post(
+    response = s.post(
         LOGIN_URL,
         data={
             "creator[email]": username,
             "creator[password]": password,
         },
-    ).json()
-    access_token = response.get("access_token")
+    )
+    try:
+        response_dict: Dict[str, str] = response.json()
+    except JSONDecodeError as e:
+        raise ConnectionError("Login URL failed to return JSON")
+    access_token = response_dict.get("access_token")
     if access_token is None:
         raise ConnectionError("Access token not found")
     s.headers["Access-Token"] = access_token
