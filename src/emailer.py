@@ -18,7 +18,7 @@ def send_email(products: List[Munch], username: str) -> None:
             '</div>'
         ) for product in products
     ]
-    with yagmail.SMTP(username, oauth2_file=OAUTH_PATH) as yag:
+    with yagmail.SMTP(user=DEV_EMAIL, oauth2_file=OAUTH_PATH) as yag:
         yag.send(
             to=username,
             subject=f"New Gifted Reviews Are Available! ({date.today()})",
@@ -31,7 +31,7 @@ def send_email(products: List[Munch], username: str) -> None:
 
 def send_error_report(username: str, e: Exception) -> None:
     error_report = "".join(traceback.format_tb(e.__traceback__)).replace("\n", "<br>")
-    with yagmail.SMTP(username, oauth2_file=OAUTH_PATH) as yag:
+    with yagmail.SMTP(user=DEV_EMAIL, oauth2_file=OAUTH_PATH) as yag:
         yag.send(
             to=DEV_EMAIL,
             subject=f"Skeeper Scraper encountered an error ({date.today()})",

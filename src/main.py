@@ -32,7 +32,7 @@ GIFTED_PAYLOAD = (
 class PatternNotFoundError(Exception):
     pass
 
-def get_html_pattern(pattern: re.Pattern[str], html: requests.Response, error_msg: str = None) -> str:
+def get_html_pattern(pattern: re.Pattern[str], html: requests.Response, error_msg: str | None = None) -> str:
     try:
         return re.findall(pattern, html.text)[0]
     except IndexError:
